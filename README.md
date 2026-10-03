@@ -2,7 +2,15 @@
 
 A simple simulation of textile dynamics for the test of XPBD modeling method.
 
-## Development roadmap and status
+## Dependancies
+
+npm install is only needed for editor type hints; to run, serve the folder over HTTP and open index.html in Chrome.
+
+## AI usage disclosure
+
+The AI tools is / were used in this project development, but the usage was intentionally limited -- see the CLAUDE.md for details.
+
+## Development roadmap
 
 | #   | Stage                             | Status       |
 | :-: | :-------------------------------- | :----------: |

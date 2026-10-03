@@ -1,0 +1,14 @@
+// AI impact: Claude added "moduleDetection", so the editor accepts top-level await in src/main.js.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    // index.html loads src/main.js as a module, but the file has no import/export.
+    // Without "force", the editor treats it as a classic script.
+    "moduleDetection": "force",
+    "checkJs": true,
+    "strict": false,
+    "types": ["@webgpu/types"]
+  },
+  "include": ["src/**/*.js"]
+}

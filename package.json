@@ -1,0 +1,25 @@
+{
+  "name": "textile-wave",
+  "version": "1.0.0",
+  "description": "A simple simulation of textile dynamics for the test of XPBD modeling method.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igor-polev/textile-wave.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/igor-polev/textile-wave/issues"
+  },
+  "homepage": "https://github.com/igor-polev/textile-wave#readme",
+  "devDependencies": {
+    "@webgpu/types": "^0.1.74"
+  },
+  "private": true
+}
