@@ -14,8 +14,8 @@ The AI tools is / were used in this project development, but the usage was inten
 
 | #   | Stage                             | Status       |
 | :-: | :-------------------------------- | :----------: |
-|  1  | App boilerplate                   | in progress  |
-|  2  | Minimal WebGPU functionality      | --           |
+|  1  | App boilerplate                   | done         |
+|  2  | Minimal WebGPU functionality      | in progress  |
 |     | and basic objects                 |              |
 |  3  | The model math on CPU             | --           |
 |  4  | Complete basic UI                 | --           |
