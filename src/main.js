@@ -8,64 +8,116 @@
 
 // === global parameers ========================================================
 
-const MESH_SIZE = 100; // this will result in MESH_SIZE x MESH_SIZE grid
-// to simulate viewer camera position we rotate all objects
-const VIEW_ROTATION = [Math.PI / 3, 0, - Math.PI / 3];  // rotations angles around X, Y, Z (rad)
+// Detalization of the textile square. The value MESH_SIZE will result
+// in a (MESH_SIZE - 1) x (MESH_SIZE - 1) grid.
+const MESH_SIZE = 51;
 
-// === 3D objects definition ===================================================
+// Desired number of frames per second in the simulation
+const TARGET_FPS = 120;
 
-const [vertexData, indexData] = prepareMesh(MESH_SIZE);
-const camRotationData         = prepareCamera(VIEW_ROTATION);
+// Parameters of demo wave z = A * sin (S * t)
+const WAVE_AMPLITUDE = 0.5;    // A
+const WAVE_SPEED     = 0.0001; // S
 
-// === render section ==========================================================
+// To simulate viewer camera position we rotate all objects by rotation
+// angles around X, Y, Z given in radians
+// TODO: rework camera position simulation to avoid every frame rotation
+const VIEW_ROTATION = [Math.PI / 3, 0, - Math.PI / 3];
 
+// per-frame parameters
+let params = new Float32Array([
+  0, // time
+  WAVE_AMPLITUDE,
+  WAVE_SPEED,
+  0  // padding
+]);
+const idxTime = 0, idxAmp = 1, idxSpeed = 2;
+
+// === GPU memory allocation ===================================================
+
+const [computeData, indexData]  =       initData(MESH_SIZE);
 const {context, device, format} = await initWGPU();
-const pipeline                  = await initShaders(device, format);
+const {pplCompute, pplRender}   = await initShaders(device, format);
 
-const vertexBuffer = device.createBuffer({
-  size:  vertexData.byteLength,
-  usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+// vertex coordinates and velocity field
+const mainBuffer = device.createBuffer({
+  size:  computeData.byteLength,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
 });
-device.queue.writeBuffer(vertexBuffer, 0, vertexData);
+device.queue.writeBuffer(mainBuffer, 0, computeData);
 
+// mesh: triangle indices
 const indexBuffer = device.createBuffer({
   size: indexData.byteLength,
   usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
 });
 device.queue.writeBuffer(indexBuffer, 0, indexData);
 
-const camBuffer = device.createBuffer({
-  size: camRotationData.byteLength,
+// camera rotation
+const cameraBuffer = device.createBuffer({
+  size: 4 * 3 * 4, // padded 4x3 matrix of float32
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 });
-const camBindGroup = device.createBindGroup({
-  layout: pipeline.getBindGroupLayout(0),
-  entries: [{ binding: 0, resource: { buffer: camBuffer } }],
-});
-device.queue.writeBuffer(camBuffer, 0, camRotationData);
+device.queue.writeBuffer(cameraBuffer, 0, prepareCamera(VIEW_ROTATION));
 
-requestAnimationFrame(frame); // start render loop
+// per-frame parameters
+const paramBuffer = device.createBuffer({
+  size: 4 * 4, // 4x float32 parameters
+  usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+});
+
+const sharedBindGroup = device.createBindGroup({
+  layout: pplCompute.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: mainBuffer   } },
+    { binding: 1, resource: { buffer: cameraBuffer } },
+    { binding: 2, resource: { buffer: paramBuffer  } }
+  ]
+});
+
+// === render loop =============================================================
+
+const renderInterval   = 1000 / TARGET_FPS;
+const timeTheBeginning = performance.now();
+while (true)
+{
+  const timeStart = performance.now();
+  params[idxTime] = timeStart - timeTheBeginning;
+  device.queue.writeBuffer(paramBuffer, 0, params);
+  requestAnimationFrame(frame);
+  const timePerFrame = performance.now() - timeStart;
+
+  if (timePerFrame > renderInterval)
+    console.warn(`frame took ${timePerFrame} ms, expected ${renderInterval} ms`);
+  else
+    await new Promise(resolve => setTimeout(resolve, renderInterval - timePerFrame));
+}
 
 function frame()
 {
   const encoder = device.createCommandEncoder();
-  const pass    = encoder.beginRenderPass({
+
+  const passCompute = encoder.beginComputePass();
+  passCompute.setPipeline(pplCompute);
+  passCompute.setBindGroup(0, sharedBindGroup);
+  passCompute.dispatchWorkgroups(Math.ceil(computeData.length / 64));
+  passCompute.end();
+
+  const passRender = encoder.beginRenderPass({
     colorAttachments: [{
-      view:       context.getCurrentTexture().createView(),
+      view: context.getCurrentTexture().createView(),
       clearValue: [0.3, 0.3, 0.3, 1],
-      loadOp:     'clear',
-      storeOp:    'store',
+      loadOp:  'clear',
+      storeOp: 'store'
     }],
   });
-  pass.setPipeline(pipeline);
-  pass.setVertexBuffer(0, vertexBuffer);
-  pass.setIndexBuffer(indexBuffer, 'uint16');
-  pass.setBindGroup(0, camBindGroup);
-  pass.drawIndexed(indexData.length);
-  pass.end();
-  device.queue.submit([encoder.finish()]);
+  passRender.setPipeline(pplRender);
+  passRender.setBindGroup(0, sharedBindGroup);
+  passRender.setIndexBuffer(indexBuffer, 'uint16');
+  passRender.drawIndexed(indexData.length);
+  passRender.end();
 
-  requestAnimationFrame(frame);
+  device.queue.submit([encoder.finish()]);
 }
 
 // === init functions ==========================================================
@@ -92,6 +144,10 @@ async function initWGPU()
   return {context, device, format};
 };
 
+/**
+ * @param {GPUDevice}        device 
+ * @param {GPUTextureFormat} texFormat
+ */
 async function initShaders(device, texFormat)
 {
   const shadersModule = device.createShaderModule({
@@ -99,22 +155,20 @@ async function initShaders(device, texFormat)
     code: await fetch('src/shaders.wgsl')
       .then((response) => response.text())
   });
-  return device.createRenderPipeline({
-    layout: 'auto',
+
+  const pplCompute = device.createComputePipeline({
+    layout: 'auto', // must match pplRender
+    compute: {
+      module: shadersModule,
+      entryPoint: 'compute_main'    
+    }
+  });
+  const pplRender = device.createRenderPipeline({
+    layout: 'auto', // must match pplCompute
     vertex: {
       module: shadersModule,
       entryPoint: "vertex_main",
-      buffers: [{
-        attributes: [
-          {
-            shaderLocation: 0,
-            offset: 0,
-            format: 'float32x3',
-          }
-        ],
-        arrayStride: 12,
-        stepMode: 'vertex'
-      }]
+      buffers: []
     },
     fragment: {
       module: shadersModule,
@@ -123,18 +177,16 @@ async function initShaders(device, texFormat)
     },
     primitive: {
       topology: 'triangle-list'
-    },
-    /*depthStencil: {
-      depthWriteEnabled: true,
-      depthCompare: 'less',
-      format: 'depth24plus',
-    }*/
+    }
   });
+
+  return {pplCompute, pplRender};
 }
 
-// === objects definition functions ============================================
-
-function prepareMesh(size)
+/**
+ * @param {number} size -- size of the mesh
+ */
+function initData(size)
 {
   if (!Number.isInteger(size) || size <= 1)
     throw new Error(`prepareMesh : invalid value of the mesh size = ${size}`);
@@ -151,12 +203,17 @@ function prepareMesh(size)
   for (let i = 0; i < size; i++) {
     let y = -0.5;
     for (let j = 0; j < size; j++) {
-      vertices.push(x, y, Math.sin(x * y / 0.05 * Math.PI) * 0.0625); // sine is for test visualization
+      vertices.push(
+        x, y, params[idxAmp] * Math.sin(x * y), // wave at t = 0
+        0,       // padding
+        0, 0, 0, // undesturbed velocity field
+        0        // padding
+      );
       if (i < size - 1 && j < size - 1) {
         triangles.push(
           vertexIdx, vertexIdx + 1, vertexIdx + size + 1,
           vertexIdx + size + 1, vertexIdx + size, vertexIdx
-        ); // 4-byte alignment is Ok
+        ); // 4-byte alignment of Uint16Array is Ok
       }
       vertexIdx++;
       y += meshStep;
@@ -170,6 +227,9 @@ function prepareMesh(size)
   ];
 }
 
+/**
+ * @param {number[]} angles 
+ */
 function prepareCamera(angles)
 {
   // to avoid extra libs usage we make rotation matrix 'by hand'
