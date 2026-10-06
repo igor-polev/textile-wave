@@ -13,25 +13,25 @@
 const MESH_SIZE = 51;
 
 // Desired number of frames per second in the simulation
-const TARGET_FPS = 120;
+const TARGET_FPS = 100;
 
 // Parameters of demo wave z = A * sin (S * t)
-const WAVE_AMPLITUDE = 0.5;    // A
-const WAVE_SPEED     = 0.0001; // S
+const WAVE_AMPLITUDE = 0.1;    // A
+const WAVE_SPEED     = 0.005; // S
 
 // To simulate viewer camera position we rotate all objects by rotation
 // angles around X, Y, Z given in radians
 // TODO: rework camera position simulation to avoid every frame rotation
-const VIEW_ROTATION = [Math.PI / 3, 0, - Math.PI / 3];
+const VIEW_ROTATION = [- Math.PI / 3, 0, - Math.PI / 3];
 
 // per-frame parameters
 let params = new Float32Array([
   0, // time
+  0, // d-time
   WAVE_AMPLITUDE,
-  WAVE_SPEED,
-  0  // padding
+  WAVE_SPEED
 ]);
-const idxTime = 0, idxAmp = 1, idxSpeed = 2;
+const idxTime = 0, idxDTime = 1, idxAmp = 2, idxSpeed = 3;
 
 // === GPU memory allocation ===================================================
 
@@ -90,10 +90,12 @@ const renderInterval   = 1000 / TARGET_FPS;
 const timeTheBeginning = performance.now();
 while (true)
 {
-  const timeStart = performance.now();
-  params[idxTime] = timeStart - timeTheBeginning;
+  const timeStart    = performance.now();
+  params[idxTime]    = timeStart - timeTheBeginning;
+  params[idxDTime]  += timeStart;
   device.queue.writeBuffer(paramBuffer, 0, params);
   requestAnimationFrame(frame);
+  params[idxDTime]   = - timeStart;
   const timePerFrame = performance.now() - timeStart;
 
   if (timePerFrame > renderInterval)
@@ -211,14 +213,14 @@ function initData(size)
   const vertices  = [];
   const triangles = [];
 
-  const meshStep  = 1.0 / (size - 1);
+  const meshStep  = 0.8 / (size - 1);
   let vertexIdx = 0;
-  let x = -0.5;
+  let x = -0.4;
   for (let i = 0; i < size; i++) {
-    let y = -0.5;
+    let y = -0.4;
     for (let j = 0; j < size; j++) {
       vertices.push(
-        x, y, params[idxAmp] * Math.sin(x * y), // wave at t = 0
+        x, y, params[idxAmp] * Math.sin(x * y * 80), // wave at t = 0
         0,       // padding
         0, 0, 0, // undesturbed velocity field
         0        // padding

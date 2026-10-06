@@ -18,9 +18,9 @@ struct Particle {
 
 struct Parameters {
   time      : f32,
+  dtime     : f32,
   amplitude : f32,
-  speed     : f32,
-  padding   : f32
+  speed     : f32
 }
 
 @group(0) @binding(0)
@@ -38,7 +38,8 @@ fn compute_main(@builtin(global_invocation_id) id: vec3u) {
   var p = particles[id.x];
   p.velocity.z =
     prm.amplitude * prm.speed *
-    cos(prm.speed * prm.time + p.position.x * p.position.y);
-  p.position += p.velocity * prm.time;
+    cos(prm.speed * prm.time + p.position.x * p.position.y * 80);
+  p.position += p.velocity * prm.dtime;
   particles[id.x] = p;
+  
 }

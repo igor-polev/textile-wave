@@ -18,9 +18,9 @@ struct Particle {
 
 struct Parameters {
   time      : f32,
+  dtime     : f32,
   amplitude : f32,
-  speed     : f32,
-  padding   : f32
+  speed     : f32
 }
 
 @group(0) @binding(0)
@@ -47,7 +47,12 @@ fn vertex_main(@builtin(vertex_index) idx: u32) -> VertexOut {
 
   var out : VertexOut;
   out.position = vec4f(point, 1.0);
-  out.color    = vec4f(vertex[2] / prm.amplitude * 0.5 + 0.5, 0, 0, 1);
+  out.color    = vec4f(
+    vertex[2] / prm.amplitude * 0.5 + 0.5,
+    0,
+    particles[idx].velocity.z / prm.amplitude / prm.speed * 0.5 + 0.5,
+    1
+  );
   return out;
 }
 
