@@ -66,14 +66,23 @@ const paramBuffer = device.createBuffer({
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 });
 
-const sharedBindGroup = device.createBindGroup({
+const computeBindGroup = device.createBindGroup({
   layout: pplCompute.getBindGroupLayout(0),
   entries: [
-    { binding: 0, resource: { buffer: mainBuffer   } },
-    { binding: 1, resource: { buffer: cameraBuffer } },
-    { binding: 2, resource: { buffer: paramBuffer  } }
+    { binding: 0, resource: { buffer: mainBuffer  } },
+    { binding: 1, resource: { buffer: paramBuffer } }
   ]
 });
+
+const renderBindGroup = device.createBindGroup({
+  layout: pplRender.getBindGroupLayout(0),
+  entries: [
+    { binding: 0, resource: { buffer: mainBuffer   } },
+    { binding: 1, resource: { buffer: paramBuffer  } },
+    { binding: 2, resource: { buffer: cameraBuffer } }
+  ]
+});
+
 
 // === render loop =============================================================
 
@@ -99,8 +108,8 @@ function frame()
 
   const passCompute = encoder.beginComputePass();
   passCompute.setPipeline(pplCompute);
-  passCompute.setBindGroup(0, sharedBindGroup);
-  passCompute.dispatchWorkgroups(Math.ceil(computeData.length / 64));
+  passCompute.setBindGroup(0, computeBindGroup);
+  passCompute.dispatchWorkgroups(Math.ceil(computeData.length / 8));
   passCompute.end();
 
   const passRender = encoder.beginRenderPass({
@@ -112,7 +121,7 @@ function frame()
     }],
   });
   passRender.setPipeline(pplRender);
-  passRender.setBindGroup(0, sharedBindGroup);
+  passRender.setBindGroup(0, renderBindGroup);
   passRender.setIndexBuffer(indexBuffer, 'uint16');
   passRender.drawIndexed(indexData.length);
   passRender.end();
@@ -150,28 +159,33 @@ async function initWGPU()
  */
 async function initShaders(device, texFormat)
 {
-  const shadersModule = device.createShaderModule({
+  const computeModule = device.createShaderModule({
     // the path is relative to index.html, not to this file
-    code: await fetch('src/shaders.wgsl')
+    code: await fetch('src/compute.wgsl')
+      .then((response) => response.text())
+  });
+  const renderModule = device.createShaderModule({
+    // the path is relative to index.html, not to this file
+    code: await fetch('src/render.wgsl')
       .then((response) => response.text())
   });
 
   const pplCompute = device.createComputePipeline({
     layout: 'auto', // must match pplRender
     compute: {
-      module: shadersModule,
+      module: computeModule,
       entryPoint: 'compute_main'    
     }
   });
   const pplRender = device.createRenderPipeline({
     layout: 'auto', // must match pplCompute
     vertex: {
-      module: shadersModule,
+      module: renderModule,
       entryPoint: "vertex_main",
       buffers: []
     },
     fragment: {
-      module: shadersModule,
+      module: renderModule,
       entryPoint: "fragment_main",
       targets: [{format: texFormat}]
     },

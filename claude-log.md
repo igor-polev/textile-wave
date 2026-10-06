@@ -27,3 +27,9 @@ Other problems found:
 **Reply:** Review only, no code changed. The buffer and its layout are correct (a 48-byte `mat3x3f` with column padding), but it is never connected to the shader. Fix: create a bind group with `pipeline.getBindGroupLayout(0)` and call `pass.setBindGroup(0, ...)` before the draw. Also noted:
 - With the current view angles, one corner of the mesh gets depth > 1 and is clipped.
 - The header comments in `shaders.wgsl` and `main.js` are out of date.
+
+## 2026-10-06 — Bind group error after splitting the shaders
+
+**Prompt:** I split the shaders into `src/compute.wgsl` and `src/render.wgsl`. Now `createBindGroup` fails: "binding index 1 not present in the bind group layout". How do I bind the buffers properly?
+
+**Reply:** Review only, no code changed. With `layout: 'auto'`, a pipeline's layout has only the bindings its entry point uses. `compute_main` does not use `camRotation`, so binding 1 is missing. Also, an `'auto'` layout works only with its own pipeline, and binding 0 differs (`read_write` in compute, `read` in vertex). So one shared bind group cannot work. Fix: make two bind groups, one from each pipeline's `getBindGroupLayout(0)`: compute gets bindings 0 and 2, render gets 0, 1 and 2. Also noted: the dispatch count uses the number of floats, not particles (8 times too many threads), and the bounds check in `compute_main` is commented out.
