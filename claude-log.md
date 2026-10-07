@@ -1,3 +1,4 @@
+<!-- AI impact: this log is written and maintained by Claude. -->
 # Claude usage log
 
 ## 2026-10-03 — Project skeleton
@@ -33,3 +34,29 @@ Other problems found:
 **Prompt:** I split the shaders into `src/compute.wgsl` and `src/render.wgsl`. Now `createBindGroup` fails: "binding index 1 not present in the bind group layout". How do I bind the buffers properly?
 
 **Reply:** Review only, no code changed. With `layout: 'auto'`, a pipeline's layout has only the bindings its entry point uses. `compute_main` does not use `camRotation`, so binding 1 is missing. Also, an `'auto'` layout works only with its own pipeline, and binding 0 differs (`read_write` in compute, `read` in vertex). So one shared bind group cannot work. Fix: make two bind groups, one from each pipeline's `getBindGroupLayout(0)`: compute gets bindings 0 and 2, render gets 0, 1 and 2. Also noted: the dispatch count uses the number of floats, not particles (8 times too many threads), and the bounds check in `compute_main` is commented out.
+
+## 2026-10-07 — Review of the XPBD code
+
+**Prompt:** Review `main.js`, `compute.wgsl`, `render.wgsl`: find errors, check padding, check spelling in comments, compare the math with the XPBD and Small Steps papers, give advice.
+
+**Reply:** Review only, no code changed.
+- Blocking errors: the `while (true)` loop freezes the page; `p.massInv` and the `fragment_main` parameter do not compile; the render bind group has binding 1, which the `'auto'` layout drops; one compute bind group is used with two `'auto'` pipelines; `idxDTime` points to the compliance slot, so `dtime` stays 0 and everything turns into NaN; the neighbour index wraps across row ends; neighbour reads race with writes.
+- Compared with the papers: prediction, Δλ (SSX 7), Δx (SSX 4) and the velocity update match. Differences: compliance is not divided by Δt²; the time step is the measured CPU time in ms, not Δt_frame / n in seconds; the driven centre particle should have zero inverse mass; the Jacobi solve needs a snapshot buffer; no damping; gravity sign is probably wrong; f32 precision suffers from the 0.5 z-shift baked into positions and from the f32 time accumulator.
+- Padding: all struct layouts and buffer sizes are correct.
+- Older issues still present: dispatch count, Uint16 check. New: one cloth corner is clipped, no depth buffer.
+- Spelling: list of fixes for comments. Advice: one frame loop per Algorithm 1, GPU timing, shared WGSL prefix, bending constraints.
+
+## 2026-10-07 — Check of the fixes, comment spelling
+
+**Prompt:** Fix spelling in all comments yourself. Check my corrections and report only errors that remain or are new. Include the issues I left open on purpose (page freeze, simulated time step, damping, depth buffer) and explain how to choose `workgroup_size`.
+
+**Reply:** Spelling in comments fixed in `main.js`, `compute.wgsl`, `render.wgsl`. Padding of the new structs is correct. Remaining or new errors:
+- WGSL has no `**` operator (compile error).
+- `predict` starts at zero and is updated with `+=` instead of being set from `position`.
+- The neighbour loop overwrites `position`, so only the last correction survives.
+- The centre particle velocity is still wrong; its phase lags by one substep.
+- `WAVE_SPEED` is still in rad/ms, but `dtime` is now in seconds.
+- `normalize(velocity)` gives NaN for zero velocity.
+- The dispatch count is hard-coded to 64 workgroups.
+
+Open issues were listed again. `workgroup_size`: use a multiple of 64 (64 is fine here). Tie the JS dispatch count and WGSL with an `override` constant.
