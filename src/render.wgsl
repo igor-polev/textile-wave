@@ -8,19 +8,36 @@
 
 // Same struct declerations in both shader files:
 // easy solution for the inclusion scheme absence
+// Pain attention to sync them manually.
 
 struct Particle {
   position : vec3f,
-  padding0 : f32, // vec4f layout alignment
+  mass_inv : f32,
   velocity : vec3f,
-  padding1 : f32,
+  padding  : f32
 }
 
 struct Parameters {
-  time      : f32,
-  dtime     : f32,
-  amplitude : f32,
-  speed     : f32
+  // grid parameters
+  grid_size     : f32,   // 0
+  mesh_step     : f32,   // 1
+  diag_step     : f32,   // 2
+  vertex_count  : f32,   // 3
+  idx_center    : f32,   // 4
+  // initial wave parameters
+  w_amplitude   : f32,   // 5
+  w_speed       : f32,   // 6
+  // physical parameters
+  dtime         : f32,   // 7
+  compliance    : f32,   // 8
+  padding0      : f32,   // 9
+  padding1      : f32,   // 10
+  padding2      : f32,   // 11
+  gravity_force : vec3f, // 12
+  padding3      : f32,   // 15
+  // visualization parameters
+  z_shift       : vec3f, // 16
+  padding4      : f32    // 19
 }
 
 @group(0) @binding(0)
@@ -38,25 +55,15 @@ struct VertexOut {
 }
 
 @vertex
-fn vertex_main(@builtin(vertex_index) idx: u32) -> VertexOut {
-  let vertex = particles[idx].position;
-
-  var point  = camRotation * vertex;
-  point[2]  += 0.5; // fixed depth shift to fit WebGPU coordinate range
-                    // TODO: evaluate the shift correctly
-
-  var out : VertexOut;
-  out.position = vec4f(point, 1.0);
-  out.color    = vec4f(
-    vertex[2] / prm.amplitude * 0.5 + 0.5,
-    0,
-    particles[idx].velocity.z / prm.amplitude / prm.speed * 0.5 + 0.5,
-    1
-  );
-  return out;
+fn vertex_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4f {
+  return vec4f(camRotation * particles[idx].position, 1.0);
 }
 
 @fragment
-fn fragment_main(data : VertexOut) -> @location(0) vec4f {
-  return data.color;
+fn fragment_main(@builtin(position) vec4f : pos) -> @location(0) vec4f {
+  var color = pos;
+  color[3] = 0;
+  color = normalize(color);
+  color[3] = 1;
+  return color;
 }

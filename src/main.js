@@ -13,31 +13,64 @@
 const MESH_SIZE = 51;
 
 // Desired number of frames per second in the simulation
-const TARGET_FPS = 100;
+const TARGET_FPS = 60;
 
-// Parameters of demo wave z = A * sin (S * t)
+// Initial number of substeps per frame (will be adjusted)
+const SUBSTEPS = 100;
+
+// Parameters of driving wave z = A * sin (S * t)
 const WAVE_AMPLITUDE = 0.1;    // A
 const WAVE_SPEED     = 0.005; // S
+
+const PARTICLE_MASS  = 1e-3;
+const COMPLIANCE     = 0.1;
 
 // To simulate viewer camera position we rotate all objects by rotation
 // angles around X, Y, Z given in radians
 // TODO: rework camera position simulation to avoid every frame rotation
 const VIEW_ROTATION = [- Math.PI / 3, 0, - Math.PI / 3];
 
-// per-frame parameters
 let params = new Float32Array([
-  0, // time
-  0, // d-time
-  WAVE_AMPLITUDE,
-  WAVE_SPEED
+  // === grid parameters ===
+  MESH_SIZE,           //  : 0
+  0, // mesh_step          : 1
+  0, // diag_step          : 2
+  0, // vertex_count       : 3
+  0, // idx_center         : 4
+  // === initial wave parameters ===
+  WAVE_AMPLITUDE,       // : 5
+  WAVE_SPEED,           // : 6
+  // === physical parameters ===
+  0, // dtime              : 7
+  COMPLIANCE,           // : 8
+  0, // padding0           : 9
+  0, // padding1           : 10
+  0, // padding2           : 11
+  // gravity_force (vec3f)
+  0,                    // : 12
+  0,                    // : 13
+  PARTICLE_MASS * 9.81, // : 14
+  0, // padding3           : 15
+  // === visualization parameters ===
+  // z_shift (vec3f)
+  0,                    // : 16
+  0,                    // : 17
+  0.5,                  // : 18
+  0  // padding4           : 19
 ]);
-const idxTime = 0, idxDTime = 1, idxAmp = 2, idxSpeed = 3;
+const idxMeshStep    = 1,
+      idxDiagStep    = 2,
+      idxVertexCount = 3,
+      idxIdxCenter   = 4,
+      idxTime        = 7,
+      idxDTime       = 8,
+      idxGravity     = 14;
 
 // === GPU memory allocation ===================================================
 
-const [computeData, indexData]  =       initData(MESH_SIZE);
+const [computeData, indexData] = initData();
 const {context, device, format} = await initWGPU();
-const {pplCompute, pplRender}   = await initShaders(device, format);
+const {pplPredict, pplXPBD, pplRender} = await initShaders(device, format);
 
 // vertex coordinates and velocity field
 const mainBuffer = device.createBuffer({
@@ -62,12 +95,12 @@ device.queue.writeBuffer(cameraBuffer, 0, prepareCamera(VIEW_ROTATION));
 
 // per-frame parameters
 const paramBuffer = device.createBuffer({
-  size: 4 * 4, // 4x float32 parameters
+  size: 20 * 4, // 20x float32 parameters (with padding)
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
 });
 
 const computeBindGroup = device.createBindGroup({
-  layout: pplCompute.getBindGroupLayout(0),
+  layout: pplXPBD.getBindGroupLayout(0),
   entries: [
     { binding: 0, resource: { buffer: mainBuffer  } },
     { binding: 1, resource: { buffer: paramBuffer } }
@@ -83,36 +116,67 @@ const renderBindGroup = device.createBindGroup({
   ]
 });
 
-
 // === render loop =============================================================
 
-const renderInterval   = 1000 / TARGET_FPS;
+// draw first frame
 const timeTheBeginning = performance.now();
+requestAnimationFrame(render);
+let timePerFrame = performance.now() - timeTheBeginning;
+// compute one substep
+let timePerComp = compute(timePerFrame);
+
+const loopInterval = 1000 / TARGET_FPS;
 while (true)
 {
-  const timeStart    = performance.now();
-  params[idxTime]    = timeStart - timeTheBeginning;
-  params[idxDTime]  += timeStart;
-  device.queue.writeBuffer(paramBuffer, 0, params);
-  requestAnimationFrame(frame);
-  params[idxDTime]   = - timeStart;
-  const timePerFrame = performance.now() - timeStart;
+  let computeInterval = loopInterval - timePerFrame;
+  while (computeInterval > timePerComp)
+  {
+    const timeActual = compute(timePerComp);
+    timePerComp = 0.3 * timePerComp + 0.7 * timeActual;
+    computeInterval -= timeActual;
+  }
+  const timeStart = performance.now();
+  requestAnimationFrame(render);
+  timePerFrame = 0.3 * timePerFrame + 0.7 * (performance.now() - timeStart);
 
-  if (timePerFrame > renderInterval)
-    console.warn(`frame took ${timePerFrame} ms, expected ${renderInterval} ms`);
-  else
-    await new Promise(resolve => setTimeout(resolve, renderInterval - timePerFrame));
+  if (Math.floor((performance.now() - timeTheBeginning) % 2000) === 0) {
+    console.log(`Average compute time: ${timePerComp .toFixed(3)}ms.`);
+    console.log(`Average render  time: ${timePerFrame.toFixed(3)}ms.`);
+  }
 }
 
-function frame()
+// === GPU pipelines ===========================================================
+
+/**
+ * @param {number} dTime
+ */
+function compute(dTime)
 {
+  const timeStart  = performance.now();
+  params[idxDTime] = dTime;
+  device.queue.writeBuffer(paramBuffer, 0, params);
+
   const encoder = device.createCommandEncoder();
 
-  const passCompute = encoder.beginComputePass();
-  passCompute.setPipeline(pplCompute);
-  passCompute.setBindGroup(0, computeBindGroup);
-  passCompute.dispatchWorkgroups(Math.ceil(computeData.length / 8));
-  passCompute.end();
+  const passPredict = encoder.beginComputePass();
+  passPredict.setPipeline(pplPredict);
+  passPredict.setBindGroup(0, computeBindGroup);
+  passPredict.dispatchWorkgroups(Math.ceil(computeData.length / 16));
+  passPredict.end();
+
+  const passXPBD = encoder.beginComputePass();
+  passXPBD.setPipeline(pplXPBD);
+  passXPBD.setBindGroup(0, computeBindGroup);
+  passXPBD.dispatchWorkgroups(Math.ceil(computeData.length / 16));
+  passXPBD.end();
+
+  device.queue.submit([encoder.finish()]);
+  return performance.now() - timeStart;
+}
+
+function render()
+{
+  const encoder = device.createCommandEncoder();
 
   const passRender = encoder.beginRenderPass({
     colorAttachments: [{
@@ -172,15 +236,21 @@ async function initShaders(device, texFormat)
       .then((response) => response.text())
   });
 
-  const pplCompute = device.createComputePipeline({
-    layout: 'auto', // must match pplRender
+  const pplPredict = device.createComputePipeline({
+    layout: 'auto',
     compute: {
       module: computeModule,
-      entryPoint: 'compute_main'    
+      entryPoint: 'predict_x'
+    }
+  });  const pplXPBD = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: computeModule,
+      entryPoint: 'xpbd_main'
     }
   });
   const pplRender = device.createRenderPipeline({
-    layout: 'auto', // must match pplCompute
+    layout: 'auto',
     vertex: {
       module: renderModule,
       entryPoint: "vertex_main",
@@ -196,39 +266,38 @@ async function initShaders(device, texFormat)
     }
   });
 
-  return {pplCompute, pplRender};
+  return {pplPredict, pplXPBD, pplRender};
 }
 
-/**
- * @param {number} size -- size of the mesh
- */
-function initData(size)
+// ATTENTION: initData reads and writes global variables
+function initData()
 {
-  if (!Number.isInteger(size) || size <= 1)
-    throw new Error(`prepareMesh : invalid value of the mesh size = ${size}`);
-  const sizeTooLarge = (size - 1) * (size - 1) * 6 > 0xFFFF; // limit for Uint16Array
+  if (!Number.isInteger(MESH_SIZE) || MESH_SIZE <= 1)
+    throw new Error(`prepareMesh : invalid value of the mesh size = ${MESH_SIZE}`);
+  const sizeTooLarge = (MESH_SIZE - 1) * (MESH_SIZE - 1) * 6 > 0xFFFF; // limit for Uint16Array
   if (sizeTooLarge)
-    throw new Error(`prepareMesh : requested mesh size (${size}) is too large`);
+    throw new Error(`prepareMesh : requested mesh size (${MESH_SIZE}) is too large`);
 
   const vertices  = [];
   const triangles = [];
 
-  const meshStep  = 0.8 / (size - 1);
-  let vertexIdx = 0;
+  const massInv  = 1.0 / PARTICLE_MASS;
+  const meshStep = 0.8 / (MESH_SIZE - 1);
+  let vertexIdx  = 0;
   let x = -0.4;
-  for (let i = 0; i < size; i++) {
+  for (let i = 0; i < MESH_SIZE; i++) {
     let y = -0.4;
-    for (let j = 0; j < size; j++) {
+    for (let j = 0; j < MESH_SIZE; j++) {
       vertices.push(
-        x, y, params[idxAmp] * Math.sin(x * y * 80), // wave at t = 0
-        0,       // padding
-        0, 0, 0, // undesturbed velocity field
-        0        // padding
+        x, y, 0.5,
+        massInv,  // inversed mass
+        0, 0, 0,  // undesturbed velocity field
+        0         // padding
       );
-      if (i < size - 1 && j < size - 1) {
+      if (i < MESH_SIZE - 1 && j < MESH_SIZE - 1) {
         triangles.push(
-          vertexIdx, vertexIdx + 1, vertexIdx + size + 1,
-          vertexIdx + size + 1, vertexIdx + size, vertexIdx
+          vertexIdx, vertexIdx + 1, vertexIdx + MESH_SIZE + 1,
+          vertexIdx + MESH_SIZE + 1, vertexIdx + MESH_SIZE, vertexIdx
         ); // 4-byte alignment of Uint16Array is Ok
       }
       vertexIdx++;
@@ -236,6 +305,12 @@ function initData(size)
     }
     x += meshStep;
   }
+
+  // setting global parameter values
+  params[idxMeshStep]    = meshStep;
+  params[idxDiagStep]    = meshStep * Math.sqrt(2);
+  params[idxVertexCount] = vertexIdx;
+  params[idxIdxCenter]   = Math.floor(vertexIdx * 0.5);
 
   return [
     new Float32Array(vertices),
