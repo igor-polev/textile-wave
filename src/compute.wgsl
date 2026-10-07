@@ -40,7 +40,7 @@ override MESH_STEP  : f32 = 0.0;
 override DIAG_STEP  : f32 = 0.0;
 override VERTEX_CNT : u32 = 0u;
 override IDX_CENTER : u32 = 0u;
-// initial wave parameters
+// driving wave parameters
 override WAVE_AMP   : f32 = 0.0;
 override WAVE_SP    : f32 = 0.0;
 // physical parameters
@@ -77,10 +77,10 @@ fn predict_x(@builtin(global_invocation_id) id : vec3u) {
     shift = shift % PI2; // to keep f32 precision
     particles[0].raw_data = shift;
 
-    particles[idx].predict  = vec3f(0, 0, WAVE_AMP * sin(shift));
+    particles[idx].predict  = vec3f(position.xy, WAVE_AMP * sin(shift));
   }
-  // second term of the velocity update, fits also the center vertex
-  particles[idx].velocity -= position / prm.dtime;
+  // second term of the velocity update, also works for the center vertex
+  particles[idx].velocity = - position / prm.dtime;
 }
 
 @compute

@@ -72,3 +72,28 @@ Open issues were listed again. `workgroup_size`: use a multiple of 64 (64 is fin
 **Prompt:** Explain in detail why the centre particle's velocity is about 2× too large.
 
 **Reply:** Explanation only, no code changed. In one substep, the centre gets the analytic velocity A·S·cos φ. The two velocity-update terms then add the finite difference (z_new − z_old)/h ≈ A·S·cos φ on top of it, so the result is about 2·A·S·cos φ. Today this has no visible effect: `predict_x` overwrites the centre velocity in every substep, no other particle reads it, and the render normalizes it. It becomes a real error as soon as something reads the speed. Fix: remove the analytic velocity line.
+
+## 2026-10-07 — Full review, second round
+
+**Prompt:** Do the full code review again. The only open issue should be "No damping"; report it together with all other results.
+
+**Reply:** Review only, no code changed. Checked with a CPU copy of the shader logic (numpy, f32 and f64).
+- Correction of my own earlier review: `velocity -= position / dtime` keeps the old velocity, so the velocity becomes (x_n − x_0)/h and the displacement doubles every substep; the simulation explodes. I had called this update correct in the first review. Fix: `=` instead of `-=`.
+- `DEPTH_FORMAT` is used by `initShaders` before its `const` line runs (ReferenceError).
+- The adaptive substep count needs limits: above about 200 substeps (at 60 FPS) f32 results go wrong (SSX §7); at 1–2 substeps the plain Jacobi sum explodes.
+- An even `MESH_SIZE` puts `IDX_CENTER` on the mesh edge.
+- The canvas is no longer square, so the image is stretched.
+- No damping (SSX §4.1); constraint damping needs a snapshot of the old positions.
+- Padding is correct. Minor items, wording fixes, and earlier advice not yet applied were listed.
+
+## 2026-10-07 — Substep limits, square canvas, spelling
+
+**Prompt:** Check the fixes of errors 1 and 2. Add the [MIN_SUBSTEPS, MAX_SUBSTEPS] guard. An even MESH_SIZE was checked and found harmless; other driving vertices are interesting too (say if you disagree). Make the canvas a rigid 1:1 square, also on window resize. Fix new spelling errors.
+
+**Reply:** Both fixes are correct. Added `MIN_SUBSTEPS = 10` and `MAX_SUBSTEPS = 200` and clamp the adapted substep count to them. The canvas is now the largest centered square that fits the window, done in CSS, so the existing ResizeObserver keeps it square on resize. Spelling fixed in `main.js` and `compute.wgsl`. Position on even MESH_SIZE: other driving vertices are fine, but the shader sets the driver's x and y to (0, 0), so for an even size an edge vertex is pulled 0.4 into the centre. Proposed a one-line fix that keeps the vertex's own x and y; not applied.
+
+## 2026-10-08 — Check of the even MESH_SIZE fix
+
+**Prompt:** I agree with the arguments about even MESH_SIZE. Check my fix.
+
+**Reply:** Review only, no code changed. The JS fix is correct: for an even size it now picks vertex (N/2, N/2), one of the four vertices next to the centre, and the odd case is unchanged. It is only half of the fix: the shader still puts the driver at x = y = 0, half a diagonal step away from its real place, which leaves springs around it stretched or compressed by about 30–58%. The one-line shader change (keep `position.xy`) completes it. Minor: missing semicolon.

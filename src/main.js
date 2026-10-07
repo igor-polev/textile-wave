@@ -3,10 +3,12 @@
  * 
  * AI impact: initial skeleton written by Claude, based on the webgpu-samples
  * helloTriangle sample. Spelling in comments fixed by Claude. Render loop
- * re-written by Claude: restored previous commit scheme, time measurement reworked.
- * 
- * Human supervision: the skeleton was OK, spelling autofix approved. The new version
- * of the render loop is inspected and approved.
+ * rewritten by Claude: restored the scheme of the previous commit, time
+ * measurement reworked. Substep count limits added by Claude.
+ *
+ * Human supervision: the skeleton was OK, spelling autofix approved. The new 
+ * version of the render loop and substep count limits has been inspected and
+ * approved.
  */
 
 // === global parameters =======================================================
@@ -14,25 +16,30 @@
 // Level of detail of the textile square. The value MESH_SIZE will result
 // in a (MESH_SIZE - 1) x (MESH_SIZE - 1) grid.
 const MESH_SIZE   = 51;
-const SQUARE_SIZE = 0.8;
+// Absolute size of the square (in meters)
+const SQUARE_SIZE = 0.7;
 
 // Desired number of frames per second; sets the GPU time budget per frame
 const TARGET_FPS = 60;
 
 // Initial number of substeps per frame (adjusted to the GPU time budget)
-const SUBSTEPS = 100;
+// and its limits, tuned for 60 FPS: with fewer substeps the Jacobi solve
+// diverges, with more of them f32 precision is not enough (_SSX_, section 7)
+const SUBSTEPS     = 100;
+const MIN_SUBSTEPS = 50;
+const MAX_SUBSTEPS = 200;
 
 // Parameters of the driving wave z = A * sin (S * t)
-const WAVE_AMPLITUDE = 0.1; // A
+const WAVE_AMPLITUDE = 0.4; // A
 const WAVE_SPEED     = 2.0; // S (rad/s)
 
-const PARTICLE_MASS  = 1e-3;
-const COMPLIANCE     = 0.1;
+const PARTICLE_MASS  = 2e-4;
+const COMPLIANCE     = 0.04;
 
 // To simulate the viewer's camera position, we rotate all objects by
 // the angles around X, Y, Z (in radians)
 // TODO: rework the camera position simulation to avoid the per-frame rotation
-const VIEW_ROTATION = [- Math.PI / 3, 0, - Math.PI / 3];
+const VIEW_ROTATION = [-Math.PI * 5/8, 0, - Math.PI * 1 / 16];
 
 // shader override parameters
 const WG_SIZE = 64;
@@ -58,19 +65,19 @@ const idxDTime   = 0,
 
 // === Environment setup =======================================================
 
+const DEPTH_FORMAT = 'depth24plus';
+let   depthTexture = null;
+
 const [computeData, indexData]          = initData();
 const {context, device, format, canvas} = await initWGPU();
 const {pplPredict, pplXPBD, pplRender}  = await initShaders(device, format);
-
-const DEPTH_FORMAT = 'depth24plus';
-let   depthTexture = null;
 
 new ResizeObserver(() => {
   const dpr = window.devicePixelRatio || 1;
   const max = device.limits.maxTextureDimension2D;
   canvas.width  = Math.min(max, Math.max(1, Math.floor(canvas.clientWidth  * dpr)));
   canvas.height = Math.min(max, Math.max(1, Math.floor(canvas.clientHeight * dpr)));
-  // the projection aspect changes too: rebuild the proj matrix here
+  // the canvas stays square (see style.css), so no aspect correction is needed
 }).observe(canvas);
 
 // === GPU memory allocation ===================================================
@@ -193,7 +200,8 @@ function frame(timeNow)
   device.queue.onSubmittedWorkDone().then(() => {
     const timeActual = (performance.now() - timeStart) / substepsUsed;
     timePerSubstep = 0.3 * timePerSubstep + 0.7 * timeActual;
-    substeps = Math.max(1, Math.floor(FRAME_BUDGET / timePerSubstep));
+    substeps = Math.min(MAX_SUBSTEPS,
+      Math.max(MIN_SUBSTEPS, Math.floor(FRAME_BUDGET / timePerSubstep)));
   });
 
   requestAnimationFrame(frame);
@@ -253,10 +261,12 @@ function initData()
   const coordMin  = -0.5 * SQUARE_SIZE;
   const idxMax    = MESH_SIZE - 1;
 
-  // global variables setup
+  // set up global variables
   MESH_STEP  = SQUARE_SIZE / idxMax;
   DIAG_STEP  = MESH_STEP * Math.sqrt(2);
   IDX_CENTER = Math.floor(MESH_SIZE ** 2 * 0.5);
+  if (MESH_SIZE % 2 === 0)
+    IDX_CENTER += Math.floor(MESH_SIZE * 0.5);
 
   let vertexIdx   = 0;
   for (let i = 0; i < MESH_SIZE; i++) {
@@ -290,7 +300,7 @@ function initData()
       vertexIdx++;
     }
   }
-  // global variable setup
+  // set up global variables
   VERTEX_CNT    = vertexIdx;
   WG_VERTEX_CNT = Math.ceil(VERTEX_CNT / WG_SIZE);
 
