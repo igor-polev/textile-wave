@@ -1,11 +1,12 @@
 /*
-  Textile-Wave project
-
-  Author: Igor Polev, igor.polev@gmail.com
-  AI impact: spelling in comments fixed by Claude.
-
-  Render shaders
-*/
+ * Textile-Wave project
+ *
+ * Author: Igor Polev, igor.polev@gmail.com
+ * AI impact: spelling in comments fixed by Claude.
+ * Human supervision: spelling autofix approved.
+ *
+ * Render shaders
+ */
 
 // Same struct declarations in both shader files:
 // a simple workaround, because WGSL has no #include.

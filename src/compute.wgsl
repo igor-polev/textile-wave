@@ -1,13 +1,14 @@
 /*
-  Textile-Wave project
-
-  Author: Igor Polev, igor.polev@gmail.com
-  AI impact: spelling in comments fixed by Claude.
-
-  Small Steps modification of the XPBD algorithm. See details in:
-  https://matthias-research.github.io/pages/publications/smallsteps.pdf
-  This paper is referenced below as _SSX_.
-*/
+ * Textile-Wave project
+ *
+ * Author: Igor Polev, igor.polev@gmail.com
+ * AI impact: spelling in comments fixed by Claude.
+ * Human supervision: spelling autofix approved.
+ *
+ * Small Steps modification of the XPBD algorithm. See details in:
+ * https://matthias-research.github.io/pages/publications/smallsteps.pdf
+ * This paper is referenced below as _SSX_.
+ */
 
 // Same struct declarations in both shader files:
 // a simple workaround, because WGSL has no #include.
@@ -72,12 +73,11 @@ fn predict_x(@builtin(global_invocation_id) id : vec3u) {
   } else { // predefined movement of the central vertex
     // particles[0].raw_data is reserved for the phase shift
     // (instead of the absolute time)
-    let shift : f32 = particles[0].raw_data + WAVE_SP * prm.dtime;
+    var shift : f32 = particles[0].raw_data + WAVE_SP * prm.dtime;
     shift = shift % PI2; // to keep f32 precision
     particles[0].raw_data = shift;
 
     particles[idx].predict  = vec3f(0, 0, WAVE_AMP * sin(shift));
-    particles[idx].velocity = vec3f(0, 0, WAVE_AMP * WAVE_SP * cos(shift));
   }
   // second term of the velocity update, fits also the center vertex
   particles[idx].velocity -= position / prm.dtime;

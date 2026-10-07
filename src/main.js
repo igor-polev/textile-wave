@@ -1,9 +1,12 @@
 /*
  * Textile-Wave: app entry point.
  * 
- * AI impact: initial skeleton written by Claude, based on the
- * webgpu-samples helloTriangle sample. Spelling in comments fixed by Claude.
- * Human supervision: the skeleton was OK.
+ * AI impact: initial skeleton written by Claude, based on the webgpu-samples
+ * helloTriangle sample. Spelling in comments fixed by Claude. Render loop
+ * re-written by Claude: restored previous commit scheme, time measurement reworked.
+ * 
+ * Human supervision: the skeleton was OK, spelling autofix approved. The new version
+ * of the render loop is inspected and approved.
  */
 
 // === global parameters =======================================================
@@ -13,8 +16,11 @@
 const MESH_SIZE   = 51;
 const SQUARE_SIZE = 0.8;
 
-// Desired number of frames per second in the simulation
+// Desired number of frames per second; sets the GPU time budget per frame
 const TARGET_FPS = 60;
+
+// Initial number of substeps per frame (adjusted to the GPU time budget)
+const SUBSTEPS = 100;
 
 // Parameters of the driving wave z = A * sin (S * t)
 const WAVE_AMPLITUDE = 0.1; // A
@@ -30,7 +36,6 @@ const VIEW_ROTATION = [- Math.PI / 3, 0, - Math.PI / 3];
 
 // shader override parameters
 const WG_SIZE = 64;
-let   GRID_SIZE;
 let   MESH_STEP;
 let   DIAG_STEP;
 let   VERTEX_CNT;
@@ -121,60 +126,43 @@ const renderBindGroup = device.createBindGroup({
 
 // === render loop =============================================================
 
-// draw first frame
-const timeTheBeginning = performance.now();
-requestAnimationFrame(render);
-let timePerFrame = performance.now() - timeTheBeginning
-// compute one substep
-let timePerComp = compute(timePerFrame);
+// GPU time budget per frame, ms (the rest of the frame is left to the browser)
+const FRAME_BUDGET = 0.8 * 1000 / TARGET_FPS;
 
-const loopInterval = 1000 / TARGET_FPS;
-while (true)
-{
-  let computeInterval = loopInterval - timePerFrame;
-  while (computeInterval > timePerComp)
-  {
-    const timeActual = compute(timePerComp);
-    timePerComp = 0.3 * timePerComp + 0.7 * timeActual;
-    computeInterval -= timeActual;
-  }
-  const timeStart = performance.now();
-  requestAnimationFrame(render);
-  timePerFrame = 0.3 * timePerFrame + 0.7 * (performance.now() - timeStart);
-}
+let substeps       = SUBSTEPS;
+let timePerSubstep = FRAME_BUDGET / SUBSTEPS;
+let timePrevFrame  = null;
 
-// === GPU pipelines ===========================================================
+requestAnimationFrame(frame);
 
 /**
- * @param {number} dTime
+ * @param {DOMHighResTimeStamp} timeNow
  */
-function compute(dTime)
+function frame(timeNow)
 {
-  const timeStart  = performance.now();
-  params[idxDTime] = dTime * 1e-3;
+  const timeStart = performance.now();
+
+  // a long pause (e.g. a hidden tab) must not become one huge step
+  const dtFrame = timePrevFrame === null
+    ? 1000 / TARGET_FPS
+    : Math.min(timeNow - timePrevFrame, 2000 / TARGET_FPS);
+  timePrevFrame = timeNow;
+
+  params[idxDTime] = dtFrame * 1e-3 / substeps; // seconds, _SSX_(6)
   device.queue.writeBuffer(paramBuffer, 0, params);
 
   const encoder = device.createCommandEncoder();
 
-  const passPredict = encoder.beginComputePass();
-  passPredict.setPipeline(pplPredict);
-  passPredict.setBindGroup(0, predictBindGroup);
-  passPredict.dispatchWorkgroups(WG_VERTEX_CNT);
-  passPredict.end();
-
-  const passXPBD = encoder.beginComputePass();
-  passXPBD.setPipeline(pplXPBD);
-  passXPBD.setBindGroup(0, xpbdBindGroup);
-  passXPBD.dispatchWorkgroups(WG_VERTEX_CNT);
-  passXPBD.end();
-
-  device.queue.submit([encoder.finish()]);
-  return performance.now() - timeStart;
-}
-
-function render()
-{
-  const encoder = device.createCommandEncoder();
+  const passCompute = encoder.beginComputePass();
+  for (let s = 0; s < substeps; s++) {
+    passCompute.setPipeline(pplPredict);
+    passCompute.setBindGroup(0, predictBindGroup);
+    passCompute.dispatchWorkgroups(WG_VERTEX_CNT);
+    passCompute.setPipeline(pplXPBD);
+    passCompute.setBindGroup(0, xpbdBindGroup);
+    passCompute.dispatchWorkgroups(WG_VERTEX_CNT);
+  }
+  passCompute.end();
 
   ensureDepthTexture();
   const passRender = encoder.beginRenderPass({
@@ -198,6 +186,17 @@ function render()
   passRender.end();
 
   device.queue.submit([encoder.finish()]);
+
+  // GPU work is asynchronous: the frame cost is known only when the queue
+  // reports it done. The measured time also includes the CPU encoding above.
+  const substepsUsed = substeps;
+  device.queue.onSubmittedWorkDone().then(() => {
+    const timeActual = (performance.now() - timeStart) / substepsUsed;
+    timePerSubstep = 0.3 * timePerSubstep + 0.7 * timeActual;
+    substeps = Math.max(1, Math.floor(FRAME_BUDGET / timePerSubstep));
+  });
+
+  requestAnimationFrame(frame);
 }
 
 // === init functions ==========================================================
@@ -339,7 +338,7 @@ async function initShaders(device, texFormat)
       entryPoint: 'xpbd_main',
       constants: { // global constants
         "WG_SIZE"    : WG_SIZE,
-        "GRID_SIZE"  : GRID_SIZE,
+        "GRID_SIZE"  : MESH_SIZE,
         "MESH_STEP"  : MESH_STEP,
         "DIAG_STEP"  : DIAG_STEP,
         "VERTEX_CNT" : VERTEX_CNT,

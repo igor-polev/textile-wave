@@ -60,3 +60,15 @@ Other problems found:
 - The dispatch count is hard-coded to 64 workgroups.
 
 Open issues were listed again. `workgroup_size`: use a multiple of 64 (64 is fine here). Tie the JS dispatch count and WGSL with an `override` constant.
+
+## 2026-10-07 — One-step render loop with GPU timing
+
+**Prompt:** Revert the render loop to the one-step scheme of commit d034650 (similar to advice #1). Change the time measurement as in advice #2. State objections before editing.
+
+**Reply:** Objections raised first: the old `while` + `setTimeout` driver is not synced with the display, and a fixed `1/TARGET_FPS` step gives the wrong simulation speed on displays that are not 60 Hz. The user chose a `requestAnimationFrame` chain and a measured, clamped frame step. Done in `main.js`: one `frame()` encodes all substeps and the render pass; Δt_s = Δt_frame / n; the frame cost is measured with `onSubmittedWorkDone()`, and the substep count adapts to 80% of the frame budget. Also reported, not fixed: `GRID_SIZE` is never assigned; `shift` is a `let` but is reassigned; the centre velocity is still about 2× too large.
+
+## 2026-10-07 — Why the centre velocity is 2× too large
+
+**Prompt:** Explain in detail why the centre particle's velocity is about 2× too large.
+
+**Reply:** Explanation only, no code changed. In one substep, the centre gets the analytic velocity A·S·cos φ. The two velocity-update terms then add the finite difference (z_new − z_old)/h ≈ A·S·cos φ on top of it, so the result is about 2·A·S·cos φ. Today this has no visible effect: `predict_x` overwrites the centre velocity in every substep, no other particle reads it, and the render normalizes it. It becomes a real error as soon as something reads the speed. Fix: remove the analytic velocity line.
