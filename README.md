@@ -63,6 +63,12 @@ The model is deliberately simple. The only constraints are edge lengths:
 there is no damping, no bending stiffness, no friction and no collision
 detection.
 
+## Known Issues
+
+Some combination of parameters can make calculation scheme unstable (distorted or 
+disappeared image). In such a case refresh the app page in your browser (press F5
+or Ctrl+r).
+
 ## Project structure
 
 | File               | Contents                                          |
