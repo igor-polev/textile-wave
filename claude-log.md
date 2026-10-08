@@ -97,3 +97,15 @@ Open issues were listed again. `workgroup_size`: use a multiple of 64 (64 is fin
 **Prompt:** I agree with the arguments about even MESH_SIZE. Check my fix.
 
 **Reply:** Review only, no code changed. The JS fix is correct: for an even size it now picks vertex (N/2, N/2), one of the four vertices next to the centre, and the odd case is unchanged. It is only half of the fix: the shader still puts the driver at x = y = 0, half a diagonal step away from its real place, which leaves springs around it stretched or compressed by about 30–58%. The one-line shader change (keep `position.xy`) completes it. Minor: missing semicolon.
+
+## 2026-10-08 — The `#ui` styles seem not to work
+
+**Prompt:** The `#ui {}` CSS section seems not to work: the gravity checkbox is in the top-left corner, small and poor-looking.
+
+**Reply:** Explanation only, no code changed. The CSS is valid and probably applied: top-left at 12px is what it asks for. The panel background is semi-transparent black on the black page, so it is invisible, and 14px text with a default-size checkbox looks small. Gave a way to check in DevTools and a CSS snippet with a visible panel, larger text and a larger checkbox.
+
+## 2026-10-08 — README rework
+
+**Prompt:** Rework my README.md.
+
+**Reply:** Rewrote `README.md` from the draft. It keeps the author's content and fixes the spelling. Filled in the empty Usage and Dependencies sections, expanded the implementation details to match the current code, and added a project structure table and a license note.

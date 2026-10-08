@@ -1,8 +1,7 @@
 /*
  * Textile-Wave: page styles.
- * AI impact: initial styles written by Claude (full-window canvas),
- * later changed by Claude to a centered square canvas.
- * Human supervision: read & agreed, no corrections needed
+ * AI impact: written by Claude.
+ * Human supervision: read & agreed.
  */
 
 html, body {
@@ -21,4 +20,26 @@ canvas {
   margin: auto;
   width:  min(100vw, 100vh);
   height: min(100vw, 100vh);
+}
+
+#ui {
+  position: absolute; top: 16px; left: 16px;
+  z-index: 1; /* above the canvas */
+  padding: 10px 16px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);   /* visible on the black page */
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #eee;
+  font: 18px system-ui, sans-serif;
+  user-select: none;
+}
+#ui label {
+  display: inline-flex; /* checkbox and text on one centered line */
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+#ui input {
+  margin: 0;
+  width: 1.2em; height: 1.2em;   /* scales with the font size */
+  accent-color: #4a9eff;
 }

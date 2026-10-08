@@ -31,10 +31,11 @@ const MAX_SUBSTEPS = 200;
 
 // Parameters of the driving wave z = A * sin (S * t)
 const WAVE_AMPLITUDE = 0.4; // A
-const WAVE_SPEED     = 2.0; // S (rad/s)
+const WAVE_SPEED     = 1.0; // S (rad/s)
 
-const PARTICLE_MASS  = 2e-4;
-const COMPLIANCE     = 0.04;
+const PARTICLE_MASS  = 5e-4;
+const COMPLIANCE     = 0.08;
+const GRAVITY_CONST  = 9.81;
 
 // To simulate the viewer's camera position, we rotate all objects by
 // the angles around X, Y, Z (in radians)
@@ -57,7 +58,7 @@ let params = new Float32Array([
   // gravity_force (vec3f)
   0,                     // : 4
   0,                     // : 5
-  -9.81 * PARTICLE_MASS, // : 6
+  0,                     // : 6
   0  // padding3            : 7
 ]);
 const idxDTime   = 0,
@@ -72,6 +73,8 @@ const [computeData, indexData]          = initData();
 const {context, device, format, canvas} = await initWGPU();
 const {pplPredict, pplXPBD, pplRender}  = await initShaders(device, format);
 
+// === UI section ==============================================================
+
 new ResizeObserver(() => {
   const dpr = window.devicePixelRatio || 1;
   const max = device.limits.maxTextureDimension2D;
@@ -79,6 +82,14 @@ new ResizeObserver(() => {
   canvas.height = Math.min(max, Math.max(1, Math.floor(canvas.clientHeight * dpr)));
   // the canvas stays square (see style.css), so no aspect correction is needed
 }).observe(canvas);
+
+const gravityBox = document.getElementById('gravity');
+if (!(gravityBox instanceof HTMLInputElement))
+  throw new Error('Checkbox #gravity not found');
+
+gravityBox.addEventListener('change', () => {
+  params[idxGravity] = gravityBox.checked ? -GRAVITY_CONST * PARTICLE_MASS : 0;
+});
 
 // === GPU memory allocation ===================================================
 
