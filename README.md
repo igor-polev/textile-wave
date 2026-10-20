@@ -14,7 +14,7 @@ Plain JavaScript: no engine, no libraries, no build step.
 with WebGPU: Chrome or Edge 113+, or another Chromium-based browser with WebGPU
 enabled.
 
-<!-- TODO: looping GIF of the running simulation goes here, directly below the demo link -->
+![An example of rendering (low res)](cloth.gif)
 
 A square piece of cloth is held at its four corners while a vertex at its centre
 is driven up and down as a sine wave. Both stages of the physics — position
