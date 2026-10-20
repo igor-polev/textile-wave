@@ -2,6 +2,7 @@
     AI impact: reworked by Claude from the author's draft; later restructured by
     Claude — demo link, opening section, performance section, stability section
     rewritten from the constants comment in src/main.js.
+    Performance tables filled in by Claude from its own measurements
     Human review: approved.
 -->
 
@@ -65,30 +66,34 @@ actually costs and keeps the substep count at the largest value that still fits
 into 80% of the frame at the target frame rate. The numbers below therefore say
 how much constraint solving this implementation fits into one frame.
 
-> Measurements pending — the tables below are the measurement plan.
+Measured on 2026-10-21.
 
 **Test bench**
 
 | | |
 | :-- | :-- |
-| GPU | |
-| Driver / Mesa version | |
-| Browser and version | |
-| OS | |
-| Canvas size, px | |
-| Device pixel ratio | |
+| GPU | NVIDIA GeForce RTX 3080 (Ampere) |
+| Driver / Mesa version | NVIDIA 560.94 (32.0.15.6094) |
+| CPU | Intel Core i5-3570K, 4 cores, 3.4 GHz |
+| Browser and version | Microsoft Edge 135.0.3179.66 (Chromium 135) |
+| OS | Windows 11 Pro N 23H2, build 22631.6199 |
+| Display refresh rate | 120 Hz |
+| Canvas size, px | 1024 × 1024 |
+| Device pixel ratio | 1 |
 
 **Throughput against mesh size.** Steady state, gravity on, `TARGET_FPS = 60`,
-`COMPLIANCE` at its default. Particle and constraint counts are fixed by the
-mesh and are filled in already.
+`COMPLIANCE` at its default. The frame rate is set by the display, not by
+`TARGET_FPS`, so FPS is 120 throughout. *Wall time per substep* is the app's
+own `timePerSubstep`; *GPU time per substep* is the compute pass measured with
+timestamp queries, divided by the substep count.
 
-| `MESH_SIZE` | Particles | Constraints | Substeps / frame | FPS | Time per substep, ms | Particle updates / s | Constraint evaluations / s |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 21 | 441 | 1 640 | | | | | |
-| 31 | 961 | 3 660 | | | | | |
-| 51 | 2 601 | 10 100 | | | | | |
-| 71 | 5 041 | 19 740 | | | | | |
-| 101 | 10 201 | 40 200 | | | | | |
+| `MESH_SIZE` | Particles | Constraints | Substeps / frame | FPS | Wall time per substep, ms | GPU time per substep, µs | Particle updates / s | Constraint evaluations / s |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 21 | 441 | 1 640 | 200 | 120 | 0.034 | 10 | 10.6 M | 78.7 M |
+| 31 | 961 | 3 660 | 200 | 120 | 0.035 | 10 | 23.1 M | 176 M |
+| 51 | 2 601 | 10 100 | 200 | 120 | 0.035 | 11 | 62.4 M | 485 M |
+| 71 | 5 041 | 19 740 | 200 | 120 | 0.035 | 11 | 121 M | 948 M |
+| 101 | 10 201 | 40 200 | 200 | 120 | 0.034 | 13 | 245 M | 1.93 G |
 
 The two derived columns:
 
@@ -96,32 +101,58 @@ The two derived columns:
 - *constraint evaluations / s* = 2 × constraints × substeps × FPS, the factor 2
   because the Jacobi pass evaluates every constraint from both of its endpoints.
 
+The substep count sits at `MAX_SUBSTEPS`: the GPU needs about 2 ms of the
+8.3 ms frame for 200 substeps. The adaptive controller does not see this. Its
+wall-clock measure is mostly the latency of `onSubmittedWorkDone()`, 7–25 ms
+per frame, not the cost of the work. In 9 of 20 runs, at every mesh size, the
+controller locked at `MIN_SUBSTEPS = 50` instead: a latency of 17 or 25 ms
+per frame gives a substep time of 0.34–0.50 ms, so the count stays at the
+floor. All throughput figures are then a quarter of the table, at the same
+120 FPS. Which state a run ends in is decided at start-up; it does not depend on
+the mesh size. When the cap is lifted (`MAX_SUBSTEPS = 100000`), runs that
+escape the floor settle at about 680 substeps per frame.
+
 **Stable substep window.** The lower bound is where the Jacobi iteration stops
 converging within a substep; the upper bound is where f32 precision runs out
 (*Small Steps*, section 7). `MIN_SUBSTEPS` and `MAX_SUBSTEPS` in `src/main.js`
-are set from this window.
+are set from this window. The counts below are substeps per 1/60 s frame; at
+another frame rate they scale with the frame time.
 
 | `COMPLIANCE` | Lowest stable substeps | Highest stable substeps |
 | ---: | ---: | ---: |
-| 0.02 | | |
-| 0.08 | | |
-| 0.20 | | |
+| 0.02 | 10 | 352 |
+| 0.08 | 6 | 416 |
+| 0.20 | 4 | 256 |
+
+Below the lowest count every particle becomes NaN and the cloth vanishes; the
+first one or two counts above it still oscillate more than the rest. Above the
+highest count the cloth does not blow up, but it no longer follows the
+simulation: it sags less, its surface becomes noisy, and from about 1 000
+substeps the per-vertex noise is clearly visible.
 
 **What the frame is spent on.** Two dispatches per substep means
-2 × substeps × FPS compute dispatches per second — fill in that figure and state
-which side the limit falls on: GPU memory traffic, or CPU-side command encoding.
+2 × substeps × FPS compute dispatches per second.
 
 | | |
 | :-- | :-- |
-| Dispatches / s at `MESH_SIZE = 51` | |
-| Limiting factor | |
+| Dispatches / s at `MESH_SIZE = 51` | 48 000 (200 substeps × 120 FPS × 2); 12 000 when locked at 50 substeps |
+| Limiting factor | Neither GPU memory traffic nor CPU encoding: the substep cap, or the controller locked at the floor. The GPU is busy about 2 ms per frame, and JS encoding takes about 0.2 ms. GPU time per substep hardly grows from 441 to 10 201 particles, so the GPU part is per-dispatch overhead, not memory traffic. |
 
-*How the numbers are taken:* `substeps` and `timePerSubstep` in the render loop
-of `src/main.js` hold both values; log them once a second after the simulation
-has settled. Note that `timePerSubstep` is derived from wall-clock time around
-`device.queue.onSubmittedWorkDone()`, so it includes CPU encoding and queue
-latency and is a frame-cost estimate rather than a pure GPU measurement. GPU
-timestamp queries would give the exact figure — see the TODO in `src/main.js`.
+*How the numbers are taken:* an instrumented copy of the app, driven by
+Playwright in a visible Edge window. The copy takes its constants from URL
+parameters, adds timestamp queries around the compute pass and reads the
+particle buffer back; the physics and the render loop are unchanged.
+
+- Throughput: 15 s warm-up, then 8–10 s of frame records; each mesh size was
+  run four times. Wall time per substep is the mean of the per-frame
+  `timePerSubstep` input; GPU time is the median of the timestamp samples.
+- Stability: a fixed frame step of 1/60 s and a fixed substep count. A count
+  is stable at the low end if no value is NaN after 30 s of simulated time
+  (counts 2–20 tested). At the high end, after 10 s the shape is compared with
+  a reference run well inside the window (128, 64 and 32 substeps for the three
+  compliances). The highest stable count is the last tested count before the
+  first one whose RMS distance from the reference exceeds 3.5 cm, about
+  2.5 mesh steps. Counts were tested in steps of 32 from 128 to 512.
 
 ## Numerical stability
 

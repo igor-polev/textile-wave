@@ -121,3 +121,14 @@ Open issues were listed again. `workgroup_size`: use a multiple of 64 (64 is fin
 - `CLAUDE.md`: dropped the reference to `task.docx`, which is not in the repository.
 
 Not changed: the GitHub topic `numerial-methods` is a typo for `numerical-methods` and has to be fixed in the repository settings, not in a file.
+
+## 2026-10-21 — Performance measurements
+
+**Prompt:** Perform the necessary tests and fill in the measurement tables in the README. Follow-up questions: will failed renders show in the reports, and does using the PC during the tests affect the results?
+
+**Reply:** Measured on the author's PC (RTX 3080, i5-3570K, Edge 135, 120 Hz display). The tests used an instrumented copy of the app, outside the repository, driven by Playwright. The project code was not changed; `README.md` was edited.
+
+- Stability window (substeps per 1/60 s frame): 10–352 at compliance 0.02, 6–416 at 0.08, 4–256 at 0.20. Below the window the cloth becomes NaN; above it the cloth drifts and gets noisy, but does not blow up.
+- Throughput: the substep count is capped at 200 and FPS is 120 (the display rate) at every mesh size. GPU time per substep is 10–13 µs and barely depends on mesh size: per-dispatch overhead, not memory traffic. JS encoding is about 1 µs per substep.
+- Finding: the adaptive controller is bistable. Its wall-clock measure is mostly `onSubmittedWorkDone()` latency, so in 9 of 20 runs it locked at `MIN_SUBSTEPS = 50`, regardless of mesh size.
+- Answers: blank renders are the NaN blow-ups below the window and show in the reports. The stability results do not depend on other PC use; the timing results do.
