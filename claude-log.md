@@ -109,3 +109,15 @@ Open issues were listed again. `workgroup_size`: use a multiple of 64 (64 is fin
 **Prompt:** Rework my README.md.
 
 **Reply:** Rewrote `README.md` from the draft. It keeps the author's content and fixes the spelling. Filled in the empty Usage and Dependencies sections, expanded the implementation details to match the current code, and added a project structure table and a license note.
+
+## 2026-10-20 — README restructure for presentation, metadata cleanup
+
+**Prompt:** Review how the repository presents itself and apply the advice: rework `README.md` (no GIF and no measurements yet, but add a template for the measurements), fix the small metadata problems, and remove the reference to `task.docx`.
+
+**Reply:** Edited `README.md`, `package.json` and `CLAUDE.md`.
+
+- `README.md`: the live demo link now comes first; the opening says the physics runs entirely in compute shaders instead of calling the project simple twice. "Known Issues" became a "Numerical stability" section that names the cause — one Jacobi iteration per substep needs a short enough substep, and below a certain substep length f32 precision takes over — taken from the constants comment in `main.js`. The restriction to distance constraints moved into its own "Scope" section. Added an empty "Performance" section: test bench, throughput against mesh size with particle and constraint counts filled in, the stable substep window, dispatch rate, and a note on where to read `substeps` and `timePerSubstep` and why that timing is an estimate. The AI disclosure now states what the assistant actually did rather than only that it was used.
+- `package.json`: removed `main` pointing at a non-existent file and the placeholder `test` script; `type` set to `module`, author filled in, keywords added, `homepage` pointed at the demo page.
+- `CLAUDE.md`: dropped the reference to `task.docx`, which is not in the repository.
+
+Not changed: the GitHub topic `numerial-methods` is a typo for `numerical-methods` and has to be fixed in the repository settings, not in a file.

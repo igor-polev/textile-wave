@@ -1,6 +1,6 @@
 ## Project description
 
-See README.md and task.docx.
+See README.md.
 
 ## Toolchain
 
